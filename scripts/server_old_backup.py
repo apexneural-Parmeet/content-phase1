@@ -16,13 +16,15 @@ import cloudinary.uploader
 import tweepy
 import asyncio
 import praw
+import json
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.date import DateTrigger
+import uuid
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI(title="Facebook & Instagram Photo Poster")
-# Serve uploads directory statically (so files are accessible via URL)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Configure CORS
 app.add_middleware(
@@ -36,6 +38,31 @@ app.add_middleware(
 # Create uploads directory if it doesn't exist
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# Serve uploads directory statically (so files are accessible via URL)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+# Scheduled posts storage
+SCHEDULED_POSTS_FILE = Path("scheduled_posts.json")
+
+# Initialize scheduler
+scheduler = BackgroundScheduler()
+scheduler.start()
+
+def load_scheduled_posts():
+    """Load scheduled posts from JSON file"""
+    if SCHEDULED_POSTS_FILE.exists():
+        try:
+            with open(SCHEDULED_POSTS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return []
+    return []
+
+def save_scheduled_posts(posts):
+    """Save scheduled posts to JSON file"""
+    with open(SCHEDULED_POSTS_FILE, 'w') as f:
+        json.dump(posts, f, indent=2)
 
 # Facebook API configuration
 FACEBOOK_ACCESS_TOKEN = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
@@ -412,6 +439,103 @@ async def post_photo_to_reddit(image_path: str, caption: str) -> dict:
         raise HTTPException(status_code=500, detail=f"Failed to post to Reddit: {str(e)}")
 
 
+def run_async_in_thread(coro):
+    """
+    Helper function to run async coroutines in the background scheduler thread
+    """
+    import threading
+    loop = None
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If there's already a running loop, create a new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        # No event loop exists, create a new one
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        # Don't close the loop if it was already running
+        pass
+
+
+async def execute_scheduled_post_async(post_id: str, image_path: str, caption: str, platforms: dict):
+    """
+    Execute a scheduled post (async version)
+    """
+    try:
+        print(f"📅 Executing scheduled post: {post_id}")
+        
+        results = {
+            "facebook": {"success": False, "error": None},
+            "instagram": {"success": False, "error": None},
+            "twitter": {"success": False, "error": None},
+            "reddit": {"success": False, "error": None}
+        }
+        
+        # Post to selected platforms
+        if platforms.get("facebook"):
+            try:
+                fb_result = await post_photo_to_facebook(image_path, caption)
+                results["facebook"] = {"success": True, "postId": fb_result.get("id")}
+                print("✅ Scheduled post: Posted to Facebook")
+            except Exception as e:
+                results["facebook"] = {"success": False, "error": str(e)}
+                print(f"❌ Scheduled post: Facebook failed - {e}")
+        
+        if platforms.get("instagram"):
+            try:
+                ig_result = await post_photo_to_instagram(image_path, caption)
+                results["instagram"] = {"success": True, "postId": ig_result.get("id")}
+                print("✅ Scheduled post: Posted to Instagram")
+            except Exception as e:
+                results["instagram"] = {"success": False, "error": str(e)}
+                print(f"❌ Scheduled post: Instagram failed - {e}")
+        
+        if platforms.get("twitter"):
+            try:
+                tw_result = await post_photo_to_twitter_v2(image_path, caption)
+                results["twitter"] = {"success": True, "postId": tw_result.get("id")}
+                print("✅ Scheduled post: Posted to Twitter")
+            except Exception as e:
+                results["twitter"] = {"success": False, "error": str(e)}
+                print(f"❌ Scheduled post: Twitter failed - {e}")
+        
+        if platforms.get("reddit"):
+            try:
+                rd_result = await post_photo_to_reddit(image_path, caption)
+                results["reddit"] = {"success": True, "postId": rd_result.get("id")}
+                print("✅ Scheduled post: Posted to Reddit")
+            except Exception as e:
+                results["reddit"] = {"success": False, "error": str(e)}
+                print(f"❌ Scheduled post: Reddit failed - {e}")
+        
+        # Clean up image file after posting
+        if os.path.exists(image_path):
+            os.remove(image_path)
+        
+        # Remove from scheduled posts
+        posts = load_scheduled_posts()
+        posts = [p for p in posts if p["id"] != post_id]
+        save_scheduled_posts(posts)
+        
+        print(f"✅ Scheduled post {post_id} completed and removed from schedule")
+        
+    except Exception as e:
+        print(f"❌ Error executing scheduled post {post_id}: {e}")
+
+
+def execute_scheduled_post(post_id: str, image_path: str, caption: str, platforms: dict):
+    """
+    Synchronous wrapper for executing scheduled posts
+    """
+    run_async_in_thread(execute_scheduled_post_async(post_id, image_path, caption, platforms))
+
+
 @app.get("/api/health")
 async def health_check():
     """
@@ -516,10 +640,12 @@ async def verify_token():
 @app.post("/api/post")
 async def post_to_social_media(
     photo: UploadFile = File(...),
-    caption: str = Form("")
+    caption: str = Form(""),
+    platforms: str = Form(None),
+    scheduled_time: str = Form(None)
 ):
     """
-    Post a photo with caption to both Facebook and Instagram
+    Post a photo with caption to selected platforms (immediately or scheduled)
     """
     # Validate file type
     if photo.content_type not in ALLOWED_EXTENSIONS:
@@ -548,6 +674,62 @@ async def post_to_social_media(
         
         print(f"Processing upload: {{'filename': '{filename}', 'caption': '{caption}'}}")
         
+        # Parse platforms selection
+        selected = {"facebook": True, "instagram": True, "twitter": True, "reddit": True}
+        if platforms:
+            try:
+                selected = json.loads(platforms)
+            except Exception:
+                selected = {"facebook": True, "instagram": True, "twitter": True, "reddit": True}
+        
+        # Handle scheduled posts
+        if scheduled_time:
+            try:
+                # Parse the scheduled time
+                schedule_dt = datetime.fromisoformat(scheduled_time.replace('Z', '+00:00'))
+                
+                # Create a unique post ID
+                post_id = str(uuid.uuid4())
+                
+                # Save post info
+                scheduled_post = {
+                    "id": post_id,
+                    "caption": caption,
+                    "image_path": str(file_path),
+                    "platforms": selected,
+                    "scheduled_time": scheduled_time,
+                    "created_at": datetime.now().isoformat()
+                }
+                
+                posts = load_scheduled_posts()
+                posts.append(scheduled_post)
+                save_scheduled_posts(posts)
+                
+                # Schedule the job
+                scheduler.add_job(
+                    func=execute_scheduled_post,
+                    trigger=DateTrigger(run_date=schedule_dt),
+                    args=[post_id, str(file_path), caption, selected],
+                    id=post_id,
+                    replace_existing=True
+                )
+                
+                print(f"📅 Post scheduled for {schedule_dt}")
+                
+                return {
+                    "success": True,
+                    "message": f"Post scheduled successfully for {schedule_dt.strftime('%B %d, %Y at %I:%M %p')}",
+                    "scheduled": True,
+                    "post_id": post_id,
+                    "scheduled_time": scheduled_time
+                }
+                
+            except Exception as e:
+                # Clean up file if scheduling fails
+                if file_path.exists():
+                    os.remove(file_path)
+                raise HTTPException(status_code=400, detail=f"Failed to schedule post: {str(e)}")
+
         results = {
             "facebook": {"success": False, "error": None},
             "instagram": {"success": False, "error": None},
@@ -556,66 +738,70 @@ async def post_to_social_media(
         }
         
         # Post to Facebook
-        try:
-            fb_result = await post_photo_to_facebook(str(file_path), caption)
-            results["facebook"] = {
-                "success": True,
-                "postId": fb_result.get("id"),
-                "postLink": f"https://www.facebook.com/{fb_result.get('post_id')}" if fb_result.get('post_id') else None
-            }
-            print("✅ Posted to Facebook successfully")
-        except Exception as fb_error:
-            results["facebook"] = {
-                "success": False,
-                "error": str(fb_error)
-            }
-            print(f"❌ Facebook posting failed: {fb_error}")
+        if selected.get("facebook"):
+            try:
+                fb_result = await post_photo_to_facebook(str(file_path), caption)
+                results["facebook"] = {
+                    "success": True,
+                    "postId": fb_result.get("id"),
+                    "postLink": f"https://www.facebook.com/{fb_result.get('post_id')}" if fb_result.get('post_id') else None
+                }
+                print("✅ Posted to Facebook successfully")
+            except Exception as fb_error:
+                results["facebook"] = {
+                    "success": False,
+                    "error": str(fb_error)
+                }
+                print(f"❌ Facebook posting failed: {fb_error}")
         
         # Post to Instagram
-        try:
-            ig_result = await post_photo_to_instagram(str(file_path), caption)
-            results["instagram"] = {
-                "success": True,
-                "postId": ig_result.get("id")
-            }
-            print("✅ Posted to Instagram successfully")
-        except Exception as ig_error:
-            results["instagram"] = {
-                "success": False,
-                "error": str(ig_error)
-            }
-            print(f"❌ Instagram posting failed: {ig_error}")
+        if selected.get("instagram"):
+            try:
+                ig_result = await post_photo_to_instagram(str(file_path), caption)
+                results["instagram"] = {
+                    "success": True,
+                    "postId": ig_result.get("id")
+                }
+                print("✅ Posted to Instagram successfully")
+            except Exception as ig_error:
+                results["instagram"] = {
+                    "success": False,
+                    "error": str(ig_error)
+                }
+                print(f"❌ Instagram posting failed: {ig_error}")
 
         # Post photo with caption to Twitter (v1.1 upload + v2 create_tweet)
-        try:
-            tw_result = await post_photo_to_twitter_v2(str(file_path), caption)
-            results["twitter"] = {
-                "success": True,
-                "postId": tw_result.get("id")
-            }
-            print("✅ Posted photo to Twitter successfully (v1.1 upload + v2 tweet)")
-        except Exception as tw_error:
-            results["twitter"] = {
-                "success": False,
-                "error": str(tw_error)
-            }
-            print(f"❌ Twitter photo posting failed: {tw_error}")
+        if selected.get("twitter"):
+            try:
+                tw_result = await post_photo_to_twitter_v2(str(file_path), caption)
+                results["twitter"] = {
+                    "success": True,
+                    "postId": tw_result.get("id")
+                }
+                print("✅ Posted photo to Twitter successfully (v1.1 upload + v2 tweet)")
+            except Exception as tw_error:
+                results["twitter"] = {
+                    "success": False,
+                    "error": str(tw_error)
+                }
+                print(f"❌ Twitter photo posting failed: {tw_error}")
 
         # Post photo with title (caption) to Reddit
-        try:
-            rd_result = await post_photo_to_reddit(str(file_path), caption)
-            results["reddit"] = {
-                "success": True,
-                "postId": rd_result.get("id"),
-                "postUrl": rd_result.get("url")
-            }
-            print("✅ Posted photo to Reddit successfully")
-        except Exception as rd_error:
-            results["reddit"] = {
-                "success": False,
-                "error": str(rd_error)
-            }
-            print(f"❌ Reddit photo posting failed: {rd_error}")
+        if selected.get("reddit"):
+            try:
+                rd_result = await post_photo_to_reddit(str(file_path), caption)
+                results["reddit"] = {
+                    "success": True,
+                    "postId": rd_result.get("id"),
+                    "postUrl": rd_result.get("url")
+                }
+                print("✅ Posted photo to Reddit successfully")
+            except Exception as rd_error:
+                results["reddit"] = {
+                    "success": False,
+                    "error": str(rd_error)
+                }
+                print(f"❌ Reddit photo posting failed: {rd_error}")
         
         # Clean up uploaded file
         os.remove(file_path)
@@ -663,6 +849,91 @@ async def post_to_social_media(
             status_code=500,
             detail=f"Failed to post: {str(e)}"
         )
+
+
+@app.get("/api/scheduled-posts")
+async def get_scheduled_posts():
+    """
+    Get all scheduled posts
+    """
+    posts = load_scheduled_posts()
+    return {"scheduled_posts": posts}
+
+
+@app.delete("/api/scheduled-posts/{post_id}")
+async def delete_scheduled_post(post_id: str):
+    """
+    Delete a scheduled post
+    """
+    try:
+        # Remove from scheduler
+        try:
+            scheduler.remove_job(post_id)
+        except:
+            pass  # Job might not exist in scheduler
+        
+        # Load posts and remove the one with matching ID
+        posts = load_scheduled_posts()
+        post_to_delete = next((p for p in posts if p["id"] == post_id), None)
+        
+        if not post_to_delete:
+            raise HTTPException(status_code=404, detail="Scheduled post not found")
+        
+        # Remove image file if it exists
+        if os.path.exists(post_to_delete["image_path"]):
+            os.remove(post_to_delete["image_path"])
+        
+        # Remove from posts list
+        posts = [p for p in posts if p["id"] != post_id]
+        save_scheduled_posts(posts)
+        
+        return {"success": True, "message": "Scheduled post deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete scheduled post: {str(e)}")
+
+
+def restore_scheduled_jobs_on_startup():
+    """
+    Restore scheduled jobs from storage on server startup
+    """
+    posts = load_scheduled_posts()
+    current_time = datetime.now()
+    
+    for post in posts:
+        try:
+            schedule_dt = datetime.fromisoformat(post["scheduled_time"].replace('Z', '+00:00'))
+            
+            # Only reschedule if the time is in the future
+            if schedule_dt > current_time:
+                scheduler.add_job(
+                    func=execute_scheduled_post,
+                    trigger=DateTrigger(run_date=schedule_dt),
+                    args=[post["id"], post["image_path"], post["caption"], post["platforms"]],
+                    id=post["id"],
+                    replace_existing=True
+                )
+                print(f"✅ Restored scheduled post {post['id']} for {schedule_dt}")
+            else:
+                # Remove expired scheduled posts
+                if os.path.exists(post["image_path"]):
+                    os.remove(post["image_path"])
+                print(f"⚠️ Removed expired scheduled post {post['id']}")
+        except Exception as e:
+            print(f"❌ Failed to restore scheduled post {post.get('id')}: {e}")
+    
+    # Clean up expired posts
+    posts = [p for p in posts if datetime.fromisoformat(p["scheduled_time"].replace('Z', '+00:00')) > current_time]
+    save_scheduled_posts(posts)
+
+
+# Call restore function on startup
+@app.on_event("startup")
+async def startup_event():
+    """FastAPI startup event handler"""
+    restore_scheduled_jobs_on_startup()
 
 
 if __name__ == "__main__":
