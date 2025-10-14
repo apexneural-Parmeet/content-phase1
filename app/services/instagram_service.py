@@ -15,24 +15,32 @@ async def get_instagram_account_info() -> tuple:
     Returns:
         tuple: (instagram_account_id, username)
     """
-    if not settings.INSTAGRAM_ACCOUNT_ID:
+    # Lazy import to avoid circular dependency
+    from app.services.credentials_service import get_platform_credentials
+    
+    # Get credentials from storage first, fallback to env
+    credentials = get_platform_credentials("instagram")
+    account_id = credentials.get("account_id") if credentials else settings.INSTAGRAM_ACCOUNT_ID
+    access_token = credentials.get("access_token") if credentials else settings.INSTAGRAM_ACCESS_TOKEN
+    
+    if not account_id:
         raise HTTPException(status_code=500, detail="Instagram Account ID not configured")
     
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{settings.INSTAGRAM_GRAPH_URL}/{settings.INSTAGRAM_ACCOUNT_ID}",
+                f"{settings.INSTAGRAM_GRAPH_URL}/{account_id}",
                 params={
                     "fields": "username",
-                    "access_token": settings.INSTAGRAM_ACCESS_TOKEN
+                    "access_token": access_token
                 }
             )
             response.raise_for_status()
             data = response.json()
-            return settings.INSTAGRAM_ACCOUNT_ID, data.get("username", "Instagram")
+            return account_id, data.get("username", "Instagram")
         except Exception as e:
             print(f"Error fetching Instagram info: {e}")
-            return settings.INSTAGRAM_ACCOUNT_ID, "Instagram"
+            return account_id, "Instagram"
 
 
 async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
@@ -47,9 +55,18 @@ async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
         dict: Response from Instagram API with post ID
     """
     try:
-        ig_account_id = settings.INSTAGRAM_ACCOUNT_ID
+        # Lazy import to avoid circular dependency
+        from app.services.credentials_service import get_platform_credentials
+        
+        # Get credentials from storage first, fallback to env
+        credentials = get_platform_credentials("instagram")
+        ig_account_id = credentials.get("account_id") if credentials else settings.INSTAGRAM_ACCOUNT_ID
+        access_token = credentials.get("access_token") if credentials else settings.INSTAGRAM_ACCESS_TOKEN
+        
         if not ig_account_id:
             raise Exception("Instagram Account ID not configured")
+        if not access_token:
+            raise Exception("Instagram Access Token not configured")
 
         # Upload to Cloudinary to get a permanent HTTPS URL
         if not all([settings.CLOUDINARY_CLOUD_NAME, settings.CLOUDINARY_API_KEY, settings.CLOUDINARY_API_SECRET]):
@@ -72,7 +89,7 @@ async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
                 data={
                     "image_url": public_image_url,
                     "caption": caption,
-                    "access_token": settings.INSTAGRAM_ACCESS_TOKEN
+                    "access_token": access_token
                 }
             )
 
@@ -92,7 +109,7 @@ async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
                     f"{settings.INSTAGRAM_GRAPH_URL}/{container_id}",
                     params={
                         "fields": "status_code",
-                        "access_token": settings.INSTAGRAM_ACCESS_TOKEN
+                        "access_token": access_token
                     }
                 )
                 status_resp.raise_for_status()
@@ -108,7 +125,7 @@ async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
                 f"{settings.INSTAGRAM_GRAPH_URL}/{ig_account_id}/media_publish",
                 data={
                     "creation_id": container_id,
-                    "access_token": settings.INSTAGRAM_ACCESS_TOKEN
+                    "access_token": access_token
                 }
             )
 

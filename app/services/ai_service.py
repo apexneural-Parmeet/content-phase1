@@ -179,13 +179,15 @@ You ALWAYS provide extremely detailed, specific prompts - never vague or generic
         }
 
 
-async def generate_image_with_dalle(prompt_style: str, topic: str, enhanced_image_prompt: str = None) -> dict:
+async def generate_image_with_dalle(prompt_style: str, topic: str, enhanced_image_prompt: str = None, content_context: str = None) -> dict:
     """
     Generate a high-quality social media image using DALL-E 3
     
     Args:
         prompt_style: Style additions based on tone
         topic: Original topic for context
+        enhanced_image_prompt: Enhanced prompt from prompt enhancer (optional)
+        content_context: Summary of generated content to ensure image matches (optional)
         
     Returns:
         dict: Image URL and local path
@@ -197,12 +199,18 @@ async def generate_image_with_dalle(prompt_style: str, topic: str, enhanced_imag
         )
     
     try:
-        # Create a simple, effective DALL-E prompt
-        if enhanced_image_prompt:
-            # Use enhanced prompt but keep it simple
+        # Create a coordinated DALL-E prompt that matches the content
+        if enhanced_image_prompt and content_context:
+            # Best case: Use enhanced prompt + content context for maximum coordination
+            image_prompt = f"{enhanced_image_prompt}. This should visually represent content that says: {content_context[:150]}. Style: {prompt_style}. Professional quality, suitable for social media."
+        elif enhanced_image_prompt:
+            # Use enhanced prompt
             image_prompt = f"{enhanced_image_prompt}. Style: {prompt_style}. Professional quality, suitable for social media."
+        elif content_context:
+            # Use content context to create a matching image
+            image_prompt = f"Create a professional social media image that visually represents: {content_context[:200]}. About: {topic}. {prompt_style}. High quality, visually appealing."
         else:
-            # Simple, direct prompt
+            # Fallback: Simple, direct prompt
             image_prompt = f"Create a professional social media image about {topic}. {prompt_style}. High quality, visually appealing, suitable for social platforms."
 
         # Generate image with DALL-E 3
@@ -247,7 +255,95 @@ async def generate_image_with_dalle(prompt_style: str, topic: str, enhanced_imag
         }
 
 
-async def generate_platform_content(topic: str, tone: str = "casual", image_style: str = "realistic", generate_image: bool = True, use_prompt_enhancer: bool = True) -> dict:
+async def generate_image_with_fal(prompt_style: str, topic: str, enhanced_image_prompt: str = None, content_context: str = None) -> dict:
+    """
+    Generate image using Fal.ai Nano Banana - Ultra-fast, lightweight model
+    
+    Args:
+        prompt_style: Style additions based on tone
+        topic: Original topic
+        enhanced_image_prompt: Enhanced prompt (optional)
+        content_context: Content summary for coordination (optional)
+        
+    Returns:
+        dict: Image URL and local path
+    """
+    if not settings.FAL_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Fal.ai API key not configured. Add FAL_KEY to .env file"
+        )
+    
+    try:
+        import fal_client
+        import os as os_module
+        
+        # Set API key
+        os_module.environ["FAL_KEY"] = settings.FAL_KEY
+        
+        # Create coordinated prompt (same logic as DALL-E)
+        if enhanced_image_prompt and content_context:
+            image_prompt = f"{enhanced_image_prompt}. This should visually represent content that says: {content_context[:150]}. Style: {prompt_style}. Professional quality, suitable for social media."
+        elif enhanced_image_prompt:
+            image_prompt = f"{enhanced_image_prompt}. Style: {prompt_style}. Professional quality, suitable for social media."
+        elif content_context:
+            image_prompt = f"Create a professional social media image that visually represents: {content_context[:200]}. About: {topic}. {prompt_style}. High quality, visually appealing."
+        else:
+            image_prompt = f"Create a professional social media image about {topic}. {prompt_style}. High quality, visually appealing, suitable for social platforms."
+        
+        print(f"🍌 Generating image with Nano Banana (Fal.ai)...")
+        
+        # Generate with Nano Banana
+        result = fal_client.subscribe(
+            "fal-ai/nano-banana",
+            arguments={
+                "prompt": image_prompt[:2000],
+                "image_size": "square_hd",
+                "num_inference_steps": 4,
+                "num_images": 1
+            }
+        )
+        
+        # Get image URL
+        image_url = result["images"][0]["url"]
+        
+        print(f"✅ Nano Banana image generated: {image_url}")
+        
+        # Download and save locally
+        async with httpx.AsyncClient(timeout=30.0) as http_client:
+            img_response = await http_client.get(image_url)
+            img_response.raise_for_status()
+            
+            # Save with unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = uuid.uuid4().hex[:8]
+            filename = f"ai_generated_{timestamp}_{unique_id}.png"
+            filepath = AI_IMAGES_DIR / filename
+            
+            with open(filepath, "wb") as f:
+                f.write(img_response.content)
+        
+        print(f"💾 Image saved: {filepath}")
+        
+        return {
+            "success": True,
+            "image_url": image_url,
+            "local_path": str(filepath),
+            "filename": filename,
+            "web_path": f"/uploads/ai_generated/{filename}",
+            "provider": "fal-ai",
+            "model": "nano-banana"
+        }
+        
+    except Exception as e:
+        print(f"❌ Nano Banana error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Nano Banana image generation failed: {str(e)}"
+        )
+
+
+async def generate_platform_content(topic: str, tone: str = "casual", image_style: str = "realistic", generate_image: bool = True, use_prompt_enhancer: bool = True, image_provider: str = "dalle") -> dict:
     """
     Generate platform-specific content for all social media platforms
     
@@ -301,46 +397,9 @@ async def generate_platform_content(topic: str, tone: str = "casual", image_styl
         }
     }
     
-    # Generate image if requested
-    image_data = None
-    if generate_image:
-        # Enhanced tone descriptions
-        tone_styles = {
-            "casual": "friendly and approachable, warm and inviting atmosphere",
-            "professional": "sleek, corporate, and polished with sophisticated elegance",
-            "corporate": "ultra-clean, minimalist corporate aesthetic, extreme simplicity with maximum impact",
-            "funny": "hilarious, playful, vibrant and whimsical with comedic flair",
-            "inspirational": "motivational, uplifting, dramatic and empowering with cinematic quality",
-            "educational": "clear, informative, well-structured with visual learning elements",
-            "storytelling": "narrative-driven, emotional, engaging with story-like composition",
-            "promotional": "eye-catching, sales-focused, bold and attention-grabbing"
-        }
-        
-        # Image style mappings for DALL-E
-        style_prompts = {
-            "realistic": "professional photography style, high quality, well-lit, sharp focus, beautiful composition, commercial photography aesthetic",
-            "minimal": "ultra-minimalist design, clean white space, single focal point, Apple-style simplicity, corporate clean aesthetic, NO text overlays, pure visual impact, negative space emphasis",
-            "anime": "Japanese anime art style, vibrant colors, cel-shaded illustration, manga-inspired",
-            "2d": "flat 2D vector illustration, modern graphic design, clean shapes",
-            "comics": "comic book art style, bold outlines, dynamic panels, graphic novel aesthetic",
-            "sketch": "hand-drawn pencil sketch, artistic linework, sketchy texture",
-            "vintage": "retro vintage style, nostalgic feel, classic poster design, aged aesthetic",
-            "disney": "Disney Pixar animation style, 3D cartoon, whimsical character design"
-        }
-        
-        tone_desc = tone_styles.get(tone, "clean and modern")
-        style_desc = style_prompts.get(image_style, "photorealistic")
-        combined_prompt = f"{style_desc}, {tone_desc}"
-        
-        # Use enhanced image prompt if available
-        image_data = await generate_image_with_dalle(
-            combined_prompt, 
-            topic,
-            enhanced_image_prompt=image_topic
-        )
-    
     results = {}
     
+    # STEP 1: Generate content FIRST for all platforms
     # Enhanced tone descriptions for content
     tone_instructions = {
         "casual": "Be conversational, friendly, and approachable like talking to a friend",
@@ -405,6 +464,72 @@ Post:"""
                 "error": str(e)
             }
     
+    # STEP 2: Generate image BASED ON the actual generated content
+    # This ensures the image matches what the content is actually talking about
+    image_data = None
+    if generate_image:
+        # Extract key themes from generated content to create a better image prompt
+        content_summary = ""
+        if results.get("facebook", {}).get("success"):
+            # Use Facebook content as base since it's usually the most detailed
+            content_summary = results["facebook"]["content"][:300]
+        
+        # Enhanced tone descriptions for image
+        tone_styles = {
+            "casual": "friendly and approachable, warm and inviting atmosphere",
+            "professional": "sleek, corporate, and polished with sophisticated elegance",
+            "corporate": "ultra-clean, minimalist corporate aesthetic, extreme simplicity with maximum impact",
+            "funny": "hilarious, playful, vibrant and whimsical with comedic flair",
+            "inspirational": "motivational, uplifting, dramatic and empowering with cinematic quality",
+            "educational": "clear, informative, well-structured with visual learning elements",
+            "storytelling": "narrative-driven, emotional, engaging with story-like composition",
+            "promotional": "eye-catching, sales-focused, bold and attention-grabbing"
+        }
+        
+        # Image style mappings for DALL-E
+        style_prompts = {
+            "realistic": "professional photography style, high quality, well-lit, sharp focus, beautiful composition, commercial photography aesthetic",
+            "minimal": "ultra-minimalist design, clean white space, single focal point, Apple-style simplicity, corporate clean aesthetic, NO text overlays, pure visual impact, negative space emphasis",
+            "anime": "Japanese anime art style, vibrant colors, cel-shaded illustration, manga-inspired",
+            "2d": "flat 2D vector illustration, modern graphic design, clean shapes",
+            "comics": "comic book art style, bold outlines, dynamic panels, graphic novel aesthetic",
+            "sketch": "hand-drawn pencil sketch, artistic linework, sketchy texture",
+            "vintage": "retro vintage style, nostalgic feel, classic poster design, aged aesthetic",
+            "disney": "Disney Pixar animation style, 3D cartoon, whimsical character design"
+        }
+        
+        tone_desc = tone_styles.get(tone, "clean and modern")
+        style_desc = style_prompts.get(image_style, "photorealistic")
+        combined_prompt = f"{style_desc}, {tone_desc}"
+        
+        # Create a coordinated image prompt that matches the content
+        # If we have enhanced prompts, use them; otherwise use the topic + content summary
+        coordinated_image_prompt = None
+        if enhanced_prompts and enhanced_prompts.get("image_prompt"):
+            coordinated_image_prompt = enhanced_prompts["image_prompt"]
+        elif content_summary:
+            # Create an image prompt that matches the actual content
+            coordinated_image_prompt = f"Visual representation of: {topic}. Related to this content: {content_summary[:200]}"
+        
+        # Generate image that matches the content
+        # Choose provider based on user selection
+        if image_provider == "nano-banana":
+            print("🍌 Using Nano Banana (Fal.ai) for ultra-fast image generation...")
+            image_data = await generate_image_with_fal(
+                combined_prompt, 
+                topic,
+                enhanced_image_prompt=coordinated_image_prompt,
+                content_context=content_summary
+            )
+        else:
+            print("🎨 Using DALL-E 3 for image generation...")
+            image_data = await generate_image_with_dalle(
+                combined_prompt, 
+                topic,
+                enhanced_image_prompt=coordinated_image_prompt,
+                content_context=content_summary
+            )
+    
     return {
         "success": True,
         "platforms": results,
@@ -415,14 +540,15 @@ Post:"""
     }
 
 
-async def regenerate_image(topic: str, tone: str = "casual", image_style: str = "realistic") -> dict:
+async def regenerate_image(topic: str, tone: str = "casual", image_style: str = "realistic", image_provider: str = "dalle") -> dict:
     """
-    Regenerate a new image for the same topic
+    Regenerate a new image for the same topic with selected provider
     
     Args:
         topic: Original topic
         tone: Tone for styling
         image_style: Visual style (realistic, anime, 2d, comics, sketch, vintage, disney, 3d)
+        image_provider: "dalle" or "nano-banana"
         
     Returns:
         dict: New image data
@@ -455,7 +581,13 @@ async def regenerate_image(topic: str, tone: str = "casual", image_style: str = 
     style_desc = style_prompts.get(image_style, "photorealistic")
     combined_prompt = f"{style_desc}, {tone_desc}"
     
-    return await generate_image_with_dalle(combined_prompt, topic)
+    # Choose provider based on user selection
+    if image_provider == "nano-banana":
+        print(f"🍌 Regenerating image with Nano Banana...")
+        return await generate_image_with_fal(combined_prompt, topic)
+    else:
+        print(f"🎨 Regenerating image with DALL-E 3...")
+        return await generate_image_with_dalle(combined_prompt, topic)
 
 
 async def regenerate_platform_content(topic: str, platform: str, tone: str = "casual", previous_content: str = "") -> dict:

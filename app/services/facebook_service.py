@@ -9,13 +9,24 @@ from app.config import settings
 
 async def get_facebook_page_id() -> str:
     """
-    Get Facebook Page ID from the access token
+    Get Facebook Page ID from stored credentials or access token
     """
+    # Lazy import to avoid circular dependency
+    from app.services.credentials_service import get_platform_credentials
+    
+    # Try to get credentials from storage first
+    credentials = get_platform_credentials("facebook")
+    access_token = credentials.get("access_token") if credentials else settings.FACEBOOK_ACCESS_TOKEN
+    
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Facebook credentials not configured")
+    
+    # Fetch page ID from Facebook API using the access token
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
                 f"{settings.FACEBOOK_GRAPH_URL}/me",
-                params={"access_token": settings.FACEBOOK_ACCESS_TOKEN}
+                params={"access_token": access_token}
             )
             response.raise_for_status()
             data = response.json()
@@ -37,6 +48,16 @@ async def post_photo_to_facebook(image_path: str, caption: str) -> dict:
         dict: Response from Facebook API with post ID
     """
     try:
+        # Lazy import to avoid circular dependency
+        from app.services.credentials_service import get_platform_credentials
+        
+        # Get credentials from storage first, fallback to env
+        credentials = get_platform_credentials("facebook")
+        access_token = credentials.get("access_token") if credentials else settings.FACEBOOK_ACCESS_TOKEN
+        
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Facebook access token not configured")
+        
         page_id = await get_facebook_page_id()
         
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -46,7 +67,7 @@ async def post_photo_to_facebook(image_path: str, caption: str) -> dict:
                 }
                 data = {
                     "message": caption,
-                    "access_token": settings.FACEBOOK_ACCESS_TOKEN
+                    "access_token": access_token
                 }
                 
                 response = await client.post(

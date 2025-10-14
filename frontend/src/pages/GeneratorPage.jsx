@@ -11,6 +11,7 @@ function GeneratorPage() {
   const [prompt, setPrompt] = useState('')
   const [tone, setTone] = useState('casual')
   const [imageStyle, setImageStyle] = useState('realistic')
+  const [imageProvider, setImageProvider] = useState('nano-banana')  // Default to Nano Banana for speed
   const [usePromptEnhancer, setUsePromptEnhancer] = useState(false)  // Disabled by default
   const [isGenerating, setIsGenerating] = useState(false)
   const [enhancedPrompts, setEnhancedPrompts] = useState(null)
@@ -20,6 +21,7 @@ function GeneratorPage() {
   const [generatedImage, setGeneratedImage] = useState(null)
   const [imageApprovalStatus, setImageApprovalStatus] = useState(null)
   const [isRegeneratingImage, setIsRegeneratingImage] = useState(false)
+  const [showProviderModal, setShowProviderModal] = useState(false)
   const [message, setMessage] = useState(null)
   const [regeneratingPlatform, setRegeneratingPlatform] = useState(null)
   const [originalTopic, setOriginalTopic] = useState('')
@@ -88,7 +90,8 @@ function GeneratorPage() {
           tone: tone,
           image_style: imageStyle,
           generate_image: true,
-          use_prompt_enhancer: usePromptEnhancer
+          use_prompt_enhancer: usePromptEnhancer,
+          image_provider: imageProvider
         })
       })
 
@@ -198,6 +201,12 @@ function GeneratorPage() {
   }
 
   const handleRegenerateImage = async () => {
+    // Show provider selection modal
+    setShowProviderModal(true)
+  }
+
+  const handleRegenerateWithProvider = async (selectedProvider) => {
+    setShowProviderModal(false)
     setIsRegeneratingImage(true)
     setImageApprovalStatus(null)
 
@@ -210,7 +219,8 @@ function GeneratorPage() {
         body: JSON.stringify({
           topic: originalTopic,
           tone: originalTone,
-          image_style: imageStyle
+          image_style: imageStyle,
+          image_provider: selectedProvider
         })
       })
 
@@ -218,7 +228,9 @@ function GeneratorPage() {
 
       if (response.ok) {
         setGeneratedImage(data)
-        setMessage({ type: 'success', text: 'New image generated!' })
+        setImageProvider(selectedProvider)  // Update current provider
+        const providerName = selectedProvider === 'nano-banana' ? 'Nano Banana' : 'DALL-E 3'
+        setMessage({ type: 'success', text: `New image generated with ${providerName}!` })
         setTimeout(() => setMessage(null), 2000)
       } else {
         setMessage({ type: 'error', text: 'Failed to regenerate image' })
@@ -435,6 +447,35 @@ function GeneratorPage() {
                     <div className="card-description">{s.description}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Image Generator</label>
+              <div className="provider-grid">
+                <div
+                  className={`provider-card ${imageProvider === 'nano-banana' ? 'selected' : ''}`}
+                  onClick={() => setImageProvider('nano-banana')}
+                >
+                  <div className="provider-icon">🍌</div>
+                  <div className="provider-info">
+                    <div className="provider-name">Nano Banana</div>
+                    <div className="provider-speed">Ultra Fast • 2-3s</div>
+                    <div className="provider-desc">Fal.ai - Best for quick iterations</div>
+                  </div>
+                </div>
+                
+                <div
+                  className={`provider-card ${imageProvider === 'dalle' ? 'selected' : ''}`}
+                  onClick={() => setImageProvider('dalle')}
+                >
+                  <div className="provider-icon">🎨</div>
+                  <div className="provider-info">
+                    <div className="provider-name">DALL-E 3</div>
+                    <div className="provider-speed">Standard • 15-20s</div>
+                    <div className="provider-desc">OpenAI - Premium quality</div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -749,6 +790,46 @@ function GeneratorPage() {
               <li>Try different tones to see what works best</li>
               <li>Edit generated content to add your personal touch</li>
             </ul>
+          </div>
+        )}
+
+        {/* Provider Selection Modal for Regeneration */}
+        {showProviderModal && (
+          <div className="modal-overlay" onClick={() => setShowProviderModal(false)}>
+            <div className="provider-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Choose Image Generator</h3>
+                <button className="modal-close" onClick={() => setShowProviderModal(false)}>✕</button>
+              </div>
+              <div className="modal-content">
+                <p className="modal-subtitle">Select which AI to regenerate the image:</p>
+                <div className="modal-provider-grid">
+                  <div
+                    className="modal-provider-card"
+                    onClick={() => handleRegenerateWithProvider('nano-banana')}
+                  >
+                    <div className="modal-provider-icon">🍌</div>
+                    <div className="modal-provider-info">
+                      <div className="modal-provider-name">Nano Banana</div>
+                      <div className="modal-provider-speed">Ultra Fast • 2-3s</div>
+                      <div className="modal-provider-desc">Fal.ai - Best for quick iterations</div>
+                    </div>
+                  </div>
+                  
+                  <div
+                    className="modal-provider-card"
+                    onClick={() => handleRegenerateWithProvider('dalle')}
+                  >
+                    <div className="modal-provider-icon">🎨</div>
+                    <div className="modal-provider-info">
+                      <div className="modal-provider-name">DALL-E 3</div>
+                      <div className="modal-provider-speed">Standard • 15-20s</div>
+                      <div className="modal-provider-desc">OpenAI - Premium quality</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

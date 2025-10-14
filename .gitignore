@@ -43,6 +43,9 @@ build/
 # Scheduled posts data
 scheduled_posts.json
 
+# User credentials
+user_credentials.json
+
 # Temporary files
 *.tmp
 *.bak

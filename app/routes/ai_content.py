@@ -19,6 +19,7 @@ class GenerateRequest(BaseModel):
     image_style: str = "realistic"
     generate_image: bool = True
     use_prompt_enhancer: bool = True
+    image_provider: str = "dalle"  # "dalle" or "nano-banana"
 
 
 class RegenerateRequest(BaseModel):
@@ -32,6 +33,7 @@ class RegenerateImageRequest(BaseModel):
     topic: str
     tone: str = "casual"
     image_style: str = "realistic"
+    image_provider: str = "dalle"  # "dalle" or "nano-banana"
 
 
 class RefineRequest(BaseModel):
@@ -52,7 +54,8 @@ async def generate_content(request: GenerateRequest):
             tone=request.tone,
             image_style=request.image_style,
             generate_image=request.generate_image,
-            use_prompt_enhancer=request.use_prompt_enhancer
+            use_prompt_enhancer=request.use_prompt_enhancer,
+            image_provider=request.image_provider
         )
         return result
     except Exception as e:
@@ -85,13 +88,14 @@ async def regenerate_content(request: RegenerateRequest):
 @router.post("/regenerate-image")
 async def regenerate_image_endpoint(request: RegenerateImageRequest):
     """
-    Regenerate a new image with DALL-E 3
+    Regenerate a new image with selected provider (DALL-E 3 or Nano Banana)
     """
     try:
         result = await regenerate_image(
             topic=request.topic,
             tone=request.tone,
-            image_style=request.image_style
+            image_style=request.image_style,
+            image_provider=request.image_provider
         )
         return result
     except Exception as e:

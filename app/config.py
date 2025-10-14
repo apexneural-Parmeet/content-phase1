@@ -26,6 +26,7 @@ class Settings:
     
     # Facebook Configuration
     FACEBOOK_ACCESS_TOKEN: str = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
+    FACEBOOK_PAGE_ID: str = os.getenv("FACEBOOK_PAGE_ID")
     FACEBOOK_API_VERSION: str = "v18.0"
     
     @property
@@ -52,6 +53,7 @@ class Settings:
     TWITTER_API_SECRET: str = os.getenv("TWITTER_API_SECRET")
     TWITTER_ACCESS_TOKEN: str = os.getenv("TWITTER_ACCESS_TOKEN")
     TWITTER_ACCESS_TOKEN_SECRET: str = os.getenv("TWITTER_ACCESS_TOKEN_SECRET")
+    TWITTER_BEARER_TOKEN: str = os.getenv("TWITTER_BEARER_TOKEN")
     
     # Reddit Configuration
     REDDIT_CLIENT_ID: str = os.getenv("REDDIT_CLIENT_ID")
@@ -67,6 +69,13 @@ class Settings:
     # OpenAI Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    
+    # Fal.ai Configuration
+    FAL_KEY: str = os.getenv("FAL_KEY")
+    
+    # Telegram Bot Configuration
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHANNEL_ID: str = os.getenv("TELEGRAM_CHANNEL_ID")
 
 # Create settings instance
 settings = Settings()

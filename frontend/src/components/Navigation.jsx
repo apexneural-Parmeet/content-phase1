@@ -34,15 +34,19 @@ function Navigation() {
 
   const checkPlatformConnections = async () => {
     try {
-      const response = await fetch('/api/verify-token')
+      const response = await fetch('/api/credentials/status')
       const data = await response.json()
       
-      setPlatformStatus({
-        facebook: { connected: data.facebook?.valid || false, loading: false },
-        instagram: { connected: data.instagram?.valid || false, loading: false },
-        twitter: { connected: data.twitter?.valid || false, loading: false },
-        reddit: { connected: data.reddit?.valid || false, loading: false }
-      })
+      if (data.success && data.status) {
+        setPlatformStatus({
+          facebook: { connected: data.status.facebook?.connected || false, loading: false },
+          instagram: { connected: data.status.instagram?.connected || false, loading: false },
+          twitter: { connected: data.status.twitter?.connected || false, loading: false },
+          reddit: { connected: data.status.reddit?.connected || false, loading: false }
+        })
+      } else {
+        throw new Error('Failed to fetch status')
+      }
     } catch (error) {
       setPlatformStatus({
         facebook: { connected: false, loading: false },
@@ -100,6 +104,12 @@ function Navigation() {
           >
             <span>Schedule</span>
           </Link>
+          <Link 
+            to="/connections" 
+            className={`nav-link ${location.pathname === '/connections' ? 'active' : ''}`}
+          >
+            <span>Connections</span>
+          </Link>
           
           <div className="user-section" ref={dropdownRef}>
             <div 
@@ -138,6 +148,14 @@ function Navigation() {
                 >
                   <span className="dropdown-icon">📅</span>
                   View Schedule
+                </Link>
+                <Link 
+                  to="/connections" 
+                  className="dropdown-item"
+                  onClick={() => setShowDropdown(false)}
+                >
+                  <span className="dropdown-icon">🔗</span>
+                  Platform Connections
                 </Link>
                 <div className="dropdown-divider"></div>
                 <div className="dropdown-item info">

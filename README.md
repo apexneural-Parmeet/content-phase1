@@ -4,6 +4,7 @@ A powerful, AI-enhanced social media management platform that lets you create, s
 
 ## ✨ Key Features
 
+- **🤖 Telegram Bot** - Full feature parity via Telegram (NEW!)
 - **AI Content Generation** - GPT-4 powered content creation with platform-specific optimization
 - **DALL-E Image Generation** - AI-generated images in multiple artistic styles
 - **Smart Prompt Enhancement** - Automatically improves your prompts for better results
@@ -12,12 +13,14 @@ A powerful, AI-enhanced social media management platform that lets you create, s
 - **Content Persistence** - Never lose your generated content when navigating
 - **Approval Workflow** - Review and approve content before publishing
 - **8 Content Tones** - Casual, Professional, Corporate Minimal, Funny, Inspirational, Educational, Storytelling, Promotional
-- **9 Image Styles** - Realistic, Minimal, Anime, 2D Art, Comic Book, Sketch, Vintage, Disney, 3D Render
+- **8 Image Styles** - Realistic, Minimal, Anime, 2D Art, Comic Book, Sketch, Vintage, Disney
 
 ## 📁 Project Structure
 
 ```
 social-hub/
+├── bot.py                    # Telegram bot entry point (NEW)
+├── run.py                    # Backend server entry point
 ├── app/                      # Backend application
 │   ├── clients/             # Social media API clients
 │   ├── config.py           # Configuration settings
@@ -25,12 +28,14 @@ social-hub/
 │   ├── models/             # Pydantic schemas
 │   ├── routes/             # API endpoints
 │   │   ├── ai_content.py  # AI generation endpoints
+│   │   ├── enhance.py     # Prompt enhancement
 │   │   ├── health.py      # Health check & platform verification
 │   │   ├── posts.py       # Post creation & management
 │   │   └── scheduled.py   # Scheduler management
 │   ├── scheduler/          # Background job scheduler
 │   ├── services/           # Business logic
 │   │   ├── ai_service.py  # OpenAI integration
+│   │   ├── telegram_bot_service.py  # Telegram bot logic (NEW)
 │   │   ├── facebook_service.py
 │   │   ├── instagram_service.py
 │   │   ├── twitter_service.py
@@ -86,14 +91,14 @@ social-hub/
 ### 1. Install Dependencies
 
 **Backend:**
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 **Frontend:**
-```bash
-cd frontend
-npm install
+   ```bash
+   cd frontend
+   npm install
 ```
 
 ### 2. Configure Environment Variables
@@ -103,6 +108,9 @@ Create a `.env` file in the root directory:
 ```env
 # OpenAI API
 OPENAI_API_KEY=your_openai_api_key_here
+
+# Telegram Bot (Optional - for Telegram integration)
+TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
 
 # Facebook
 FACEBOOK_PAGE_ID=your_page_id
@@ -133,29 +141,37 @@ CLOUDINARY_API_SECRET=your_api_secret
 
 ### 3. Start the Application
 
-**Option A: Use convenience scripts**
+**Option A: Development mode (Recommended)**
+```bash
+# Start backend and Telegram bot
+./scripts/dev.sh
+
+# Start frontend (in new terminal)
+cd frontend && npm run dev
+```
+
+**Option B: Individual services**
+```bash
+# Terminal 1: Backend
+python run.py
+
+# Terminal 2: Telegram Bot (optional)
+python bot.py
+
+# Terminal 3: Frontend (optional)
+cd frontend && npm run dev
+```
+
+**Option C: Use convenience scripts**
 ```bash
 # Start backend
 ./scripts/start_server.sh
 
-# Start frontend (in new terminal)
-./scripts/start_frontend.sh
-```
+# Start Telegram bot (optional)
+./scripts/start_bot.sh
 
-**Option B: Manual start**
-```bash
-# Backend
-python run.py
-
-# Frontend (in new terminal)
-cd frontend
-npm run dev
-```
-
-**Option C: Development mode (both at once)**
-```bash
-./scripts/dev.sh
-# Then in new terminal: cd frontend && npm run dev
+# Start frontend
+cd frontend && npm run dev
 ```
 
 ### 4. Access the Application
@@ -163,6 +179,9 @@ npm run dev
 - **Frontend**: http://localhost:5173
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
+- **Telegram Bot**: Search for your bot on Telegram and send `/start`
+
+> 📱 **Telegram Bot Setup**: See [TELEGRAM_BOT_SETUP.md](./TELEGRAM_BOT_SETUP.md) for detailed bot configuration and troubleshooting.
 
 ## 📖 Usage Guide
 

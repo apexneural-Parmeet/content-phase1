@@ -5,6 +5,7 @@ import LandingPage from './pages/LandingPage'
 import GeneratorPage from './pages/GeneratorPage'
 import HomePage from './pages/HomePage'
 import SchedulerPage from './pages/SchedulerPage'
+import ConnectionsPage from './pages/ConnectionsPage'
 import { GeneratedContentProvider } from './context/GeneratedContentContext'
 
 function AppContent() {
@@ -19,6 +20,7 @@ function AppContent() {
         <Route path="/generate" element={<GeneratorPage />} />
         <Route path="/home" element={<HomePage />} />
         <Route path="/scheduler" element={<SchedulerPage />} />
+        <Route path="/connections" element={<ConnectionsPage />} />
       </Routes>
     </div>
   )
