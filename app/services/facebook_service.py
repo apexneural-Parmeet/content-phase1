@@ -4,6 +4,7 @@ Facebook posting service
 import os
 import httpx
 from fastapi import HTTPException
+from tenacity import retry, stop_after_attempt, wait_exponential
 from app.config import settings
 
 
@@ -36,6 +37,11 @@ async def get_facebook_page_id() -> str:
             raise HTTPException(status_code=401, detail="Invalid Facebook token")
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True
+)
 async def post_photo_to_facebook(image_path: str, caption: str) -> dict:
     """
     Post a photo with caption to Facebook Page
@@ -76,7 +82,14 @@ async def post_photo_to_facebook(image_path: str, caption: str) -> dict:
                     data=data
                 )
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                
+                # Add post URL
+                post_id = result.get("id") or result.get("post_id")
+                if post_id:
+                    result["url"] = f"https://www.facebook.com/{page_id}/posts/{post_id}"
+                
+                return result
                 
     except httpx.HTTPError as e:
         print(f"Error posting to Facebook: {e}")

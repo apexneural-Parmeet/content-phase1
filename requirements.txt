@@ -13,4 +13,6 @@ apscheduler==3.10.4
 openai==1.30.0
 python-telegram-bot==21.0
 fal-client==0.8.0
+slowapi==0.1.9
+tenacity==8.2.3
 

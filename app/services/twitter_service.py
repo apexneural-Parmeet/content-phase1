@@ -2,9 +2,15 @@
 Twitter posting service
 """
 from fastapi import HTTPException
+from tenacity import retry, stop_after_attempt, wait_exponential
 from app.clients.twitter import get_twitter_v1_client, get_twitter_v2_client
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True
+)
 async def post_photo_to_twitter(image_path: str, caption: str) -> dict:
     """
     Post a photo with caption to Twitter using v1.1 upload + v2 create_tweet

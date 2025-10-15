@@ -18,7 +18,7 @@ class Settings:
     
     # Directories
     UPLOAD_DIR: Path = Path("uploads")
-    SCHEDULED_POSTS_FILE: Path = Path("scheduled_posts.json")
+    SCHEDULED_POSTS_FILE: Path = Path("data/storage/scheduled_posts.json")
     
     # File Constraints
     ALLOWED_EXTENSIONS: set = {"image/jpeg", "image/jpg", "image/png", "image/gif"}

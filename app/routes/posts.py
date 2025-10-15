@@ -7,7 +7,9 @@ import uuid
 import aiofiles
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, File, UploadFile, Form, HTTPException
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from apscheduler.triggers.date import DateTrigger
 from app.config import settings
 from app.services.facebook_service import post_photo_to_facebook
@@ -18,6 +20,7 @@ from app.scheduler.scheduler import scheduler, execute_scheduled_post
 from app.scheduler.storage import load_scheduled_posts, save_scheduled_posts
 
 router = APIRouter(prefix="/api", tags=["posts"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/post")
@@ -29,6 +32,7 @@ async def create_post(
 ):
     """
     Post a photo with caption to selected platforms (immediately or scheduled)
+    Rate limited: 30 requests per minute (applied at app level)
     """
     # Validate file type
     if photo.content_type not in settings.ALLOWED_EXTENSIONS:

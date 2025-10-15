@@ -40,11 +40,15 @@ dist/
 build/
 *.egg-info/
 
-# Scheduled posts data
-scheduled_posts.json
+# Data directory (contains all sensitive files)
+data/
+!data/credentials/.gitkeep
+!data/storage/.gitkeep
 
-# User credentials
+# Legacy - in case files are still in root
+scheduled_posts.json
 user_credentials.json
+telegram_auth.json
 
 # Temporary files
 *.tmp

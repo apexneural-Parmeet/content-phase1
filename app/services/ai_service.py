@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from openai import OpenAI
 from fastapi import HTTPException
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.config import settings
 
 # Initialize OpenAI client
@@ -179,6 +180,12 @@ You ALWAYS provide extremely detailed, specific prompts - never vague or generic
         }
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((httpx.HTTPError, Exception)),
+    reraise=True
+)
 async def generate_image_with_dalle(prompt_style: str, topic: str, enhanced_image_prompt: str = None, content_context: str = None) -> dict:
     """
     Generate a high-quality social media image using DALL-E 3
@@ -255,6 +262,12 @@ async def generate_image_with_dalle(prompt_style: str, topic: str, enhanced_imag
         }
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((httpx.HTTPError, Exception)),
+    reraise=True
+)
 async def generate_image_with_fal(prompt_style: str, topic: str, enhanced_image_prompt: str = None, content_context: str = None) -> dict:
     """
     Generate image using Fal.ai Nano Banana - Ultra-fast, lightweight model
@@ -281,15 +294,24 @@ async def generate_image_with_fal(prompt_style: str, topic: str, enhanced_image_
         # Set API key
         os_module.environ["FAL_KEY"] = settings.FAL_KEY
         
-        # Create coordinated prompt (same logic as DALL-E)
+        # Create modern, clean prompt that avoids text generation issues
+        # Nano Banana works best with clear, focused prompts without text requests
+        
+        base_quality = "high quality, modern, clean composition, professional photography, trending on social media, vibrant colors, well-lit, sharp focus, 4K resolution"
+        no_text = "NO TEXT, NO WORDS, NO LETTERS, NO TYPOGRAPHY, visual only"
+        
         if enhanced_image_prompt and content_context:
-            image_prompt = f"{enhanced_image_prompt}. This should visually represent content that says: {content_context[:150]}. Style: {prompt_style}. Professional quality, suitable for social media."
+            # Extract key visual concepts from content
+            visual_concept = content_context[:100].replace('"', '').replace("'", "")
+            image_prompt = f"{enhanced_image_prompt}. Visual concept: {visual_concept}. {prompt_style}. {base_quality}. {no_text}"
         elif enhanced_image_prompt:
-            image_prompt = f"{enhanced_image_prompt}. Style: {prompt_style}. Professional quality, suitable for social media."
+            image_prompt = f"{enhanced_image_prompt}. {prompt_style}. {base_quality}. {no_text}"
         elif content_context:
-            image_prompt = f"Create a professional social media image that visually represents: {content_context[:200]}. About: {topic}. {prompt_style}. High quality, visually appealing."
+            # Focus on visual representation only
+            visual_concept = content_context[:150].replace('"', '').replace("'", "")
+            image_prompt = f"Modern social media visual about {topic}: {visual_concept}. {prompt_style}. {base_quality}. {no_text}"
         else:
-            image_prompt = f"Create a professional social media image about {topic}. {prompt_style}. High quality, visually appealing, suitable for social platforms."
+            image_prompt = f"Modern, eye-catching social media visual about {topic}. {prompt_style}. {base_quality}. Contemporary aesthetic, minimalist when appropriate. {no_text}"
         
         print(f"🍌 Generating image with Nano Banana (Fal.ai)...")
         
@@ -512,23 +534,56 @@ Post:"""
             coordinated_image_prompt = f"Visual representation of: {topic}. Related to this content: {content_summary[:200]}"
         
         # Generate image that matches the content
-        # Choose provider based on user selection
-        if image_provider == "nano-banana":
-            print("🍌 Using Nano Banana (Fal.ai) for ultra-fast image generation...")
-            image_data = await generate_image_with_fal(
-                combined_prompt, 
-                topic,
-                enhanced_image_prompt=coordinated_image_prompt,
-                content_context=content_summary
-            )
-        else:
-            print("🎨 Using DALL-E 3 for image generation...")
-            image_data = await generate_image_with_dalle(
-                combined_prompt, 
-                topic,
-                enhanced_image_prompt=coordinated_image_prompt,
-                content_context=content_summary
-            )
+        # Choose provider based on user selection with fallback
+        image_data = None
+        primary_provider = image_provider
+        fallback_provider = "dalle" if image_provider == "nano-banana" else "nano-banana"
+        
+        try:
+            if image_provider == "nano-banana":
+                print("🍌 Using Nano Banana (Fal.ai) for ultra-fast image generation...")
+                image_data = await generate_image_with_fal(
+                    combined_prompt, 
+                    topic,
+                    enhanced_image_prompt=coordinated_image_prompt,
+                    content_context=content_summary
+                )
+            else:
+                print("🎨 Using DALL-E 3 for image generation...")
+                image_data = await generate_image_with_dalle(
+                    combined_prompt, 
+                    topic,
+                    enhanced_image_prompt=coordinated_image_prompt,
+                    content_context=content_summary
+                )
+        except Exception as primary_error:
+            # Fallback to alternative provider
+            print(f"⚠️ {primary_provider} failed: {primary_error}. Trying fallback provider...")
+            
+            try:
+                if fallback_provider == "nano-banana":
+                    print("🍌 Fallback: Using Nano Banana...")
+                    image_data = await generate_image_with_fal(
+                        combined_prompt, 
+                        topic,
+                        enhanced_image_prompt=coordinated_image_prompt,
+                        content_context=content_summary
+                    )
+                else:
+                    print("🎨 Fallback: Using DALL-E 3...")
+                    image_data = await generate_image_with_dalle(
+                        combined_prompt, 
+                        topic,
+                        enhanced_image_prompt=coordinated_image_prompt,
+                        content_context=content_summary
+                    )
+                print(f"✅ Successfully generated with fallback provider: {fallback_provider}")
+            except Exception as fallback_error:
+                print(f"❌ Both providers failed. Primary: {primary_error}, Fallback: {fallback_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Image generation failed with both providers. Primary ({primary_provider}): {str(primary_error)}, Fallback ({fallback_provider}): {str(fallback_error)}"
+                )
     
     return {
         "success": True,
@@ -581,13 +636,33 @@ async def regenerate_image(topic: str, tone: str = "casual", image_style: str = 
     style_desc = style_prompts.get(image_style, "photorealistic")
     combined_prompt = f"{style_desc}, {tone_desc}"
     
-    # Choose provider based on user selection
-    if image_provider == "nano-banana":
-        print(f"🍌 Regenerating image with Nano Banana...")
-        return await generate_image_with_fal(combined_prompt, topic)
-    else:
-        print(f"🎨 Regenerating image with DALL-E 3...")
-        return await generate_image_with_dalle(combined_prompt, topic)
+    # Choose provider based on user selection with fallback
+    primary_provider = image_provider
+    fallback_provider = "dalle" if image_provider == "nano-banana" else "nano-banana"
+    
+    try:
+        if image_provider == "nano-banana":
+            print(f"🍌 Regenerating image with Nano Banana...")
+            return await generate_image_with_fal(combined_prompt, topic)
+        else:
+            print(f"🎨 Regenerating image with DALL-E 3...")
+            return await generate_image_with_dalle(combined_prompt, topic)
+    except Exception as primary_error:
+        # Fallback to alternative provider
+        print(f"⚠️ {primary_provider} failed during regeneration. Trying {fallback_provider}...")
+        
+        try:
+            if fallback_provider == "nano-banana":
+                print(f"🍌 Fallback: Regenerating with Nano Banana...")
+                return await generate_image_with_fal(combined_prompt, topic)
+            else:
+                print(f"🎨 Fallback: Regenerating with DALL-E 3...")
+                return await generate_image_with_dalle(combined_prompt, topic)
+        except Exception as fallback_error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Image regeneration failed with both providers. Primary ({primary_provider}): {str(primary_error)}, Fallback ({fallback_provider}): {str(fallback_error)}"
+            )
 
 
 async def regenerate_platform_content(topic: str, platform: str, tone: str = "casual", previous_content: str = "") -> dict:

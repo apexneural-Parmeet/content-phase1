@@ -1,8 +1,10 @@
 """
 AI content generation endpoints
 """
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, validator, Field
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from app.services.ai_service import (
     generate_platform_content, 
     refine_content, 
@@ -11,42 +13,102 @@ from app.services.ai_service import (
 )
 
 router = APIRouter(prefix="/api", tags=["ai"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 class GenerateRequest(BaseModel):
-    topic: str
+    topic: str = Field(..., min_length=1, max_length=500, description="Topic for content generation")
     tone: str = "casual"
     image_style: str = "realistic"
     generate_image: bool = True
     use_prompt_enhancer: bool = True
     image_provider: str = "dalle"  # "dalle" or "nano-banana"
+    
+    @validator('topic')
+    def validate_topic(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Topic cannot be empty')
+        # Remove excessive whitespace
+        v = ' '.join(v.split())
+        if len(v) > 500:
+            raise ValueError('Topic too long (maximum 500 characters)')
+        return v
+    
+    @validator('tone')
+    def validate_tone(cls, v):
+        valid_tones = ['casual', 'professional', 'corporate', 'funny', 'inspirational', 'educational', 'storytelling', 'promotional']
+        if v not in valid_tones:
+            raise ValueError(f'Invalid tone. Must be one of: {", ".join(valid_tones)}')
+        return v
+    
+    @validator('image_style')
+    def validate_image_style(cls, v):
+        valid_styles = ['realistic', 'minimal', 'anime', '2d', 'comics', 'sketch', 'vintage', 'disney']
+        if v not in valid_styles:
+            raise ValueError(f'Invalid image style. Must be one of: {", ".join(valid_styles)}')
+        return v
+    
+    @validator('image_provider')
+    def validate_image_provider(cls, v):
+        valid_providers = ['dalle', 'nano-banana']
+        if v not in valid_providers:
+            raise ValueError(f'Invalid image provider. Must be one of: {", ".join(valid_providers)}')
+        return v
 
 
 class RegenerateRequest(BaseModel):
-    topic: str
+    topic: str = Field(..., min_length=1, max_length=500)
     platform: str
     tone: str = "casual"
     previous_content: str = ""
+    
+    @validator('topic')
+    def validate_topic(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Topic cannot be empty')
+        return ' '.join(v.split())
+    
+    @validator('platform')
+    def validate_platform(cls, v):
+        valid_platforms = ['facebook', 'instagram', 'twitter', 'reddit']
+        if v not in valid_platforms:
+            raise ValueError(f'Invalid platform. Must be one of: {", ".join(valid_platforms)}')
+        return v
 
 
 class RegenerateImageRequest(BaseModel):
-    topic: str
+    topic: str = Field(..., min_length=1, max_length=500)
     tone: str = "casual"
     image_style: str = "realistic"
     image_provider: str = "dalle"  # "dalle" or "nano-banana"
+    
+    @validator('topic')
+    def validate_topic(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Topic cannot be empty')
+        return ' '.join(v.split())
 
 
 class RefineRequest(BaseModel):
-    original_content: str
+    original_content: str = Field(..., min_length=1, max_length=5000)
     platform: str
-    instructions: str
+    instructions: str = Field(..., min_length=1, max_length=500)
+    
+    @validator('platform')
+    def validate_platform(cls, v):
+        valid_platforms = ['facebook', 'instagram', 'twitter', 'reddit']
+        if v not in valid_platforms:
+            raise ValueError(f'Invalid platform. Must be one of: {", ".join(valid_platforms)}')
+        return v
 
 
 @router.post("/generate-content")
-async def generate_content(request: GenerateRequest):
+@limiter.limit("10/minute")  # Max 10 AI generations per minute
+async def generate_content(request: GenerateRequest, http_request: Request):
     """
     Generate platform-specific content for all social media platforms with optional image
     Automatically enhances user prompts for better results
+    Rate limited: 10 requests per minute
     """
     try:
         result = await generate_platform_content(
@@ -66,9 +128,11 @@ async def generate_content(request: GenerateRequest):
 
 
 @router.post("/regenerate-content")
-async def regenerate_content(request: RegenerateRequest):
+@limiter.limit("20/minute")  # More lenient for regeneration
+async def regenerate_content(request: RegenerateRequest, http_request: Request):
     """
     Regenerate content for a specific platform
+    Rate limited: 20 requests per minute
     """
     try:
         result = await regenerate_platform_content(
@@ -86,9 +150,11 @@ async def regenerate_content(request: RegenerateRequest):
 
 
 @router.post("/regenerate-image")
-async def regenerate_image_endpoint(request: RegenerateImageRequest):
+@limiter.limit("15/minute")  # Image regeneration limit
+async def regenerate_image_endpoint(request: RegenerateImageRequest, http_request: Request):
     """
     Regenerate a new image with selected provider (DALL-E 3 or Nano Banana)
+    Rate limited: 15 requests per minute
     """
     try:
         result = await regenerate_image(
@@ -106,9 +172,11 @@ async def regenerate_image_endpoint(request: RegenerateImageRequest):
 
 
 @router.post("/refine-content")
-async def refine_post_content(request: RefineRequest):
+@limiter.limit("30/minute")  # More lenient for content refinement
+async def refine_post_content(request: RefineRequest, http_request: Request):
     """
     Refine existing content based on user instructions
+    Rate limited: 30 requests per minute
     """
     try:
         result = await refine_content(

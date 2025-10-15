@@ -5,6 +5,7 @@ import httpx
 import asyncio
 import cloudinary.uploader
 from fastapi import HTTPException
+from tenacity import retry, stop_after_attempt, wait_exponential
 from app.config import settings
 
 
@@ -43,6 +44,11 @@ async def get_instagram_account_info() -> tuple:
             return account_id, "Instagram"
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    reraise=True
+)
 async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
     """
     Post a photo with caption to Instagram using Cloudinary for hosting
@@ -134,7 +140,15 @@ async def post_photo_to_instagram(image_path: str, caption: str) -> dict:
                 print(f"Instagram publish failed: {error_data}")
                 raise Exception(f"Failed to publish media: {error_data}")
 
-            return publish_response.json()
+            result = publish_response.json()
+            
+            # Add media ID info (Instagram doesn't provide direct post URL easily)
+            media_id = result.get("id")
+            if media_id:
+                result["media_id"] = media_id
+                result["info"] = f"Media ID: {media_id}"
+            
+            return result
 
     except Exception as e:
         error_msg = str(e)

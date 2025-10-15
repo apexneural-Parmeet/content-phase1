@@ -122,7 +122,7 @@ Added provider card styles (Lines 123-198):
 
 **File:** `.env`
 ```
-FAL_KEY=dfe6e099-a262-46d0-b3bc-aa5f58ea1961:dc16d1fd7875b38583b1e7c2eaa1eaa9
+FAL_KEY=your_fal_api_key_here
 ```
 
 **File:** `app/config.py`

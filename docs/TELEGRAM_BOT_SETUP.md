@@ -272,5 +272,106 @@ tail -f logs/telegram_bot.log
 
 ---
 
-🎉 **Congratulations! Your Telegram bot is now properly configured and ready to use!**
+---
+
+## 🆕 **Latest Features**
+
+### **1. Image Provider Choice** 🍌🎨
+
+When generating content, users can choose between two image generators:
+
+**🍌 Nano Banana (Fal.ai)**
+- Ultra-fast (2-3 seconds)
+- Cost-effective ($0.001/image)
+- Great quality
+
+**🎨 DALL-E 3 (OpenAI)**  
+- Premium quality (15-20 seconds)
+- Higher cost ($0.04/image)
+- Excellent results
+
+**Flow:**
+```
+Select Tone → Select Provider → Select Style → Generate
+```
+
+Users can choose different providers on regeneration!
+
+---
+
+### **2. Cancel & Start Over** 🔙
+
+Added "Cancel & Start Over" buttons at every stage:
+
+**Where:**
+- ✅ Image approval stage
+- ✅ Platform selection stage  
+- ✅ Publish options stage
+- ✅ Manual post creation
+
+**What It Does:**
+- Clears all progress
+- Returns to main menu
+- No need to type `/cancel`
+- Quick restart
+
+---
+
+### **3. Regenerate with Provider Choice** 🔄
+
+When clicking "Regenerate", bot asks:
+
+```
+🔄 Select Image Generator for Regeneration:
+
+🍌 Nano Banana (Ultra Fast 2-3s)
+🎨 DALL-E 3 (Premium 15-20s)
+```
+
+**Benefits:**
+- Try Nano Banana for quick iterations
+- Switch to DALL-E for final quality
+- Full control every time
+
+---
+
+## 🎯 **Complete Bot Workflow**
+
+```
+/start
+  ↓
+Main Menu
+  ↓
+Generate AI Content
+  ↓
+Enter Topic
+  ↓
+Select Tone (Casual, Professional, etc.)
+  ↓
+Select Provider (🍌 Nano Banana or 🎨 DALL-E) ← NEW
+  ↓
+Select Style (Realistic, Anime, etc.)
+  ↓
+[Generating... 2-3s or 15-20s]
+  ↓
+Image Preview
+├─ ✅ Approve
+├─ ❌ Reject
+├─ 🔄 Regenerate (Choose Provider) ← NEW
+└─ 🔙 Cancel & Start Over ← NEW
+  ↓
+Platform Selection
+├─ ✅ Approve platforms
+├─ 🚀 Continue
+└─ 🔙 Cancel & Start Over ← NEW
+  ↓
+Publish Options
+├─ 🚀 Publish Now
+├─ 📅 Schedule
+└─ 🔙 Cancel & Start Over ← NEW
+```
+
+---
+
+🎉 **Congratulations! Your Telegram bot is now properly configured with all latest features and ready to use!**
 

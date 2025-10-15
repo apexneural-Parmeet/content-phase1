@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from pathlib import Path
 
 # Storage file path
-CREDENTIALS_FILE = "user_credentials.json"
+CREDENTIALS_FILE = "data/credentials/user_credentials.json"
 
 def get_credentials_file_path() -> str:
     """Get the full path to credentials file"""

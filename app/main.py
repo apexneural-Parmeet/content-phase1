@@ -1,12 +1,18 @@
 """
 Main FastAPI application
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.routes import health, posts, scheduled, ai_content, enhance, credentials
 from app.scheduler.scheduler import init_scheduler, restore_scheduled_jobs
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -14,6 +20,22 @@ app = FastAPI(
     description="Multi-platform social media posting and scheduling with AI content generation",
     version="1.0.0"
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Add global rate limit middleware for file upload endpoints
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Apply rate limiting to posting endpoints
+    if request.url.path == "/api/post":
+        try:
+            await limiter.check_request_limit(request, "30/minute")
+        except RateLimitExceeded:
+            return _rate_limit_exceeded_handler(request, RateLimitExceeded("30 per 1 minute"))
+    response = await call_next(request)
+    return response
 
 # Configure CORS
 app.add_middleware(

@@ -190,6 +190,20 @@
   margin: 8px 0;
 }
 
+.logout-btn {
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: #dc3545;
+}
+
+.logout-btn:hover {
+  background: #fff5f5;
+  color: #c82333;
+}
+
 .dropdown-platforms {
   padding: 0 16px 8px;
   display: flex;
