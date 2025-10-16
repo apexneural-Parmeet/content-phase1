@@ -16,20 +16,25 @@ from app.services.telegram_bot_service import telegram_bot
 from app.scheduler.scheduler import init_scheduler, restore_scheduled_jobs
 from app.config import settings
 
-# Shutdown flag
+# Shutdown flag and loop reference
 shutdown_event = None
+event_loop = None
 
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully"""
-    global shutdown_event
-    if shutdown_event:
-        shutdown_event.set()
+    global shutdown_event, event_loop
+    if shutdown_event and event_loop:
+        # Use call_soon_threadsafe to set event from signal handler
+        event_loop.call_soon_threadsafe(shutdown_event.set)
 
 
 async def main():
     """Main entry point for the standalone Telegram bot"""
-    global shutdown_event
+    global shutdown_event, event_loop
+    
+    # Get the running event loop for signal handler
+    event_loop = asyncio.get_running_loop()
     
     print("=" * 70)
     print("🤖 Social Hub Telegram Bot (Standalone Mode)")
@@ -87,8 +92,8 @@ async def main():
     shutdown_event = asyncio.Event()
     
     try:
-        # Start the bot (runs indefinitely)
-        bot_task = asyncio.create_task(telegram_bot.start_bot())
+        # Start the bot (runs indefinitely) with shutdown event
+        bot_task = asyncio.create_task(telegram_bot.start_bot(shutdown_event))
         
         # Wait for shutdown signal
         await shutdown_event.wait()
