@@ -44,6 +44,7 @@ build/
 data/
 !data/credentials/.gitkeep
 !data/storage/.gitkeep
+!data/storage/bot_sessions.json
 
 # Legacy - in case files are still in root
 scheduled_posts.json
