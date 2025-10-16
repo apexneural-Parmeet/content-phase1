@@ -1916,8 +1916,12 @@ class TelegramBotService:
     
     # ==================== BOT LIFECYCLE ====================
     
-    async def start_bot(self):
-        """Initialize and start the bot"""
+    async def start_bot(self, shutdown_event=None):
+        """Initialize and start the bot
+        
+        Args:
+            shutdown_event: Optional asyncio.Event to signal shutdown
+        """
         print("🤖 Initializing Telegram Bot...")
         
         self.application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
@@ -2001,9 +2005,10 @@ class TelegramBotService:
         print("✅ Bot is now running! Press Ctrl+C to stop.")
         
         try:
-            # Wait indefinitely
-            stop_event = asyncio.Event()
-            await stop_event.wait()
+            # Wait indefinitely - use external event if provided
+            if shutdown_event is None:
+                shutdown_event = asyncio.Event()
+            await shutdown_event.wait()
         except (KeyboardInterrupt, asyncio.CancelledError):
             print("\n🛑 Shutdown signal received...")
     
